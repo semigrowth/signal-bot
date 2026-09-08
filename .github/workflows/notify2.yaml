@@ -34,21 +34,27 @@ jobs:
         id: read_file
         run: |
           if [[ -f message.txt ]]; then
-            CONTENT=$(cat message.txt | sed ':a;N;$!ba;s/\n/\\n/g')
-            echo "CONTENT=$CONTENT" >> $GITHUB_ENV
+            echo "message.txt found, a notification will be sent."
           else
             echo "File message.txt not found. No changes to commit."
-            exit 0
           fi
 
       - name: Send notification to Discord
+        # Only run when main.py actually wrote a message (no-op on weekends /
+        # holidays). Previously this step always ran and posted an empty body,
+        # which Discord rejected with code 50006.
+        if: hashFiles('message.txt') != ''
         env:
-          CONTENT: ${{ env.CONTENT }}
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
         run: |
-          curl -X POST -H "Content-Type: application/json" \
-          -d "{\"content\": \"${CONTENT}\"}" \
-          $DISCORD_WEBHOOK_URL
+          # Build the JSON body with jq so multiline text and the "Error"
+          # tracebacks that main.py writes are escaped correctly. Posting raw
+          # interpolated text used to produce invalid JSON (Discord code 50109),
+          # which is why crash reports never reached the channel.
+          jq -n --rawfile content message.txt '{content: $content}' > payload.json
+          curl -sS -X POST -H "Content-Type: application/json" \
+            --data-binary @payload.json \
+            "$DISCORD_WEBHOOK_URL"
       
       - name: Push changes
         run: |

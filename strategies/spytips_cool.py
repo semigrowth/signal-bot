@@ -100,12 +100,19 @@ def spy_tips_cool():
         file_c = f.readlines()
         f.close()
         last_entry = file_c[-1].split(",")
-        if last_entry[0] == str(spy.index[-1]):
+        last_date = pd.to_datetime(last_entry[0])
+        if last_date >= spy.index[-1]:
             print("Already checked today")
             return None, None, None
-        # get index of last entry in spy data
-        last_date = pd.to_datetime(last_entry[0])
-        last_index = spy.index.get_loc(last_date)
+        # Find the position of the first bar that is NEWER than the last recorded
+        # date. The last recorded date itself may be missing from the freshly
+        # downloaded series: Yahoo Finance occasionally revises and removes
+        # historical daily bars (e.g. 2026-08-28 disappeared for a while), which
+        # made spy.index.get_loc(last_date) raise a KeyError and crash the bot on
+        # every run. searchsorted() never raises, so we simply carry on from the
+        # next available bar instead of dying. When the date is present this gives
+        # exactly the same index as get_loc() did.
+        last_index = spy.index.searchsorted(last_date, side="right") - 1
         last_rev_index = last_index - len(spy.index)
         cooldown = int(last_entry[6])
         indicator = BUY if last_entry[5] == "True" else SELL
